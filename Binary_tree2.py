@@ -1,77 +1,125 @@
-from typing import Optional, Callable, TypeVar, Generic, List, Tuple, Iterator
+from __future__ import annotations
+from typing import Any, Callable, Generic, Iterator, Optional, Tuple, TypeVar, Union
+from typing_extensions import Protocol
 
-KT = TypeVar("KT")
+class SupportsRichComparison(Protocol):
+    def __lt__(self, other: Any) -> bool: ...
+    def __le__(self, other: Any) -> bool: ...
+    def __gt__(self, other: Any) -> bool: ...
+    def __ge__(self, other: Any) -> bool: ...
+
+KT = TypeVar("KT", bound=SupportsRichComparison)
 VT = TypeVar("VT")
 AccT = TypeVar("AccT")
 
+class BinaryTreeDict(Generic[KT, VT]):
+    def __init__(self, key: Optional[KT] = None, value: Optional[VT] = None,
+                 left: Optional[BinaryTreeDict[KT, VT]] = None,
+                 right: Optional[BinaryTreeDict[KT, VT]] = None):
+        self.key = key
+        self.value = value
+        self.left = left
+        self.right = right
 
-class ImmutableDict(Generic[KT, VT]):
-    def __init__(self, items: Optional[List[Tuple[KT, VT]]] = None):
-        # 排序+去重（保留后面值）
-        if items is None:
-            self._items: List[Tuple[KT, VT]] = []
+    def is_empty(self) -> bool:
+        return self.key is None
+
+    def add(self, key: KT, value: VT) -> BinaryTreeDict[KT, VT]:
+        if self.is_empty():
+            return BinaryTreeDict(key, value, empty(), empty())
+        if key == self.key:
+            return BinaryTreeDict(key, value, self.left, self.right)
+        elif key < self.key:
+            return BinaryTreeDict(self.key, self.value, self.left.add(key, value), self.right)
         else:
-            temp = {}
-            for k, v in items:
-                temp[k] = v
-            self._items = sorted(temp.items(), key=lambda x: x[0])
-
-    def add(self, key: KT, value: VT) -> "ImmutableDict[KT, VT]":
-        """返回新字典，包含更新项"""
-        return ImmutableDict([(k, v) for k, v in self._items if k != key] + [(key, value)])
-
-    def remove(self, key: KT) -> "ImmutableDict[KT, VT]":
-        """返回新字典，不包含指定项"""
-        return ImmutableDict([(k, v) for k, v in self._items if k != key])
+            return BinaryTreeDict(self.key, self.value, self.left, self.right.add(key, value))
 
     def search(self, key: KT) -> Optional[VT]:
-        """递归查找值"""
-        def _search(items):
-            if not items:
-                return None
-            k, v = items[0]
-            return v if k == key else _search(items[1:])
-        return _search(self._items)
+        if self.is_empty():
+            return None
+        if key == self.key:
+            return self.value
+        elif key < self.key:
+            return self.left.search(key)
+        else:
+            return self.right.search(key)
 
-    def member(self, value: VT) -> bool:
-        """是否包含值"""
-        def _check(items):
-            if not items:
-                return False
-            _, v = items[0]
-            return v == value or _check(items[1:])
-        return _check(self._items)
+    def member(self, key: KT) -> bool:
+        return self.search(key) is not None
 
-    def size(self) -> int:
-        return len(self._items)
+    def remove(self, key: KT) -> BinaryTreeDict[KT, VT]:
+        if self.is_empty():
+            return self
+        if key < self.key:
+            return BinaryTreeDict(self.key, self.value, self.left.remove(key), self.right)
+        elif key > self.key:
+            return BinaryTreeDict(self.key, self.value, self.left, self.right.remove(key))
+        else:
+            if self.left.is_empty():
+                return self.right
+            if self.right.is_empty():
+                return self.left
+            min_key, min_value = self.right._find_min()
+            return BinaryTreeDict(min_key, min_value, self.left, self.right.remove(min_key))
 
-    def to_list(self) -> List[Tuple[KT, VT]]:
-        return list(self._items)
+    def _find_min(self) -> Tuple[KT, VT]:
+        if self.left.is_empty():
+            return (self.key, self.value)
+        return self.left._find_min()
 
-    def map(self, func: Callable[[KT, VT], Tuple[KT, VT]]) -> "ImmutableDict[KT, VT]":
-        return ImmutableDict([func(k, v) for k, v in self._items])
-
-    def filter(self, predicate: Callable[[KT, VT], bool]) -> "ImmutableDict[KT, VT]":
-        return ImmutableDict([(k, v) for k, v in self._items if predicate(k, v)])
-
-    def reduce(self, func: Callable[[AccT, KT, VT], AccT], initial_value: AccT) -> AccT:
-        def _reduce(items, acc):
-            if not items:
-                return acc
-            k, v = items[0]
-            return _reduce(items[1:], func(acc, k, v))
-        return _reduce(self._items, initial_value)
-
-    def concat(self, other: "ImmutableDict[KT, VT]") -> "ImmutableDict[KT, VT]":
-        return ImmutableDict(self._items + other.to_list())
-
-    def __iter__(self) -> Iterator[Tuple[KT, VT]]:
-        return iter(self._items)
+    def to_list(self) -> list[Tuple[KT, VT]]:
+        if self.is_empty():
+            return []
+        return self.left.to_list() + [(self.key, self.value)] + self.right.to_list()
 
     @staticmethod
-    def from_list(data: List[Tuple[KT, VT]]) -> "ImmutableDict[KT, VT]":
-        return ImmutableDict(data)
+    def from_list(items: list[Tuple[KT, VT]]) -> BinaryTreeDict[KT, VT]:
+        tree = empty()
+        for k, v in items:
+            tree = tree.add(k, v)
+        return tree
 
-    @staticmethod
-    def empty() -> "ImmutableDict[KT, VT]":
-        return ImmutableDict()
+    def __eq__(self, other: Any) -> bool:
+        return isinstance(other, BinaryTreeDict) and self.to_list() == other.to_list()
+
+    def __str__(self) -> str:
+        return "{" + ", ".join(f"{repr(k)}: {repr(v)}" for k, v in self.to_list()) + "}"
+
+    def __iter__(self) -> Iterator[KT]:
+        for k, _ in self.to_list():
+            yield k
+
+    def map(self, f: Callable[[KT, VT], Tuple[KT, VT]]) -> BinaryTreeDict[KT, VT]:
+        return BinaryTreeDict.from_list([f(k, v) for k, v in self.to_list()])
+
+    def filter(self, f: Callable[[KT, VT], bool]) -> BinaryTreeDict[KT, VT]:
+        return BinaryTreeDict.from_list([(k, v) for k, v in self.to_list() if f(k, v)])
+
+    def reduce(self, f: Callable[[AccT, KT, VT], AccT], acc: AccT) -> AccT:
+        for k, v in self.to_list():
+            acc = f(acc, k, v)
+        return acc
+
+def empty() -> BinaryTreeDict[Any, Any]:
+    return BinaryTreeDict()
+
+def cons(key: KT, value: VT, tree: BinaryTreeDict[KT, VT]) -> BinaryTreeDict[KT, VT]:
+    return tree.add(key, value)
+
+def concat(t1: BinaryTreeDict[KT, VT], t2: BinaryTreeDict[KT, VT]) -> BinaryTreeDict[KT, VT]:
+    return BinaryTreeDict.from_list(t1.to_list() + t2.to_list())
+
+def length(tree: BinaryTreeDict[KT, VT]) -> int:
+    return len(tree.to_list())
+
+def member(key: KT, tree: BinaryTreeDict[KT, VT]) -> bool:
+    return tree.member(key)
+
+def remove(tree: BinaryTreeDict[KT, VT], key: KT) -> BinaryTreeDict[KT, VT]:
+    return tree.remove(key)
+
+def from_list(items: list[Tuple[KT, VT]]) -> BinaryTreeDict[KT, VT]:
+    return BinaryTreeDict.from_list(items)
+
+def to_list(tree: BinaryTreeDict[KT, VT]) -> list[Tuple[KT, VT]]:
+    return tree.to_list()
