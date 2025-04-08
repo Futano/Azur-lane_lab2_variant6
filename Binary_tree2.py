@@ -7,7 +7,7 @@ AccT = TypeVar("AccT")
 
 class ImmutableDict(Generic[KT, VT]):
     def __init__(self, items: Optional[List[Tuple[KT, VT]]] = None):
-        # 排序+去重（保留后面值）
+
         if items is None:
             self._items: List[Tuple[KT, VT]] = []
         else:
